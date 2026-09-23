@@ -1,0 +1,108 @@
+name: Build offline web dependencies
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-offline-web-deps.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="offline-web-deps/vendor"
+          mkdir -p "$OUT"
+
+          curl -fL --retry 3 -o "$OUT/vue.global.prod.js" \
+            "https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"
+          curl -fL --retry 3 -o "$OUT/vue-router.global.prod.js" \
+            "https://unpkg.com/vue-router@4.3.0/dist/vue-router.global.prod.js"
+          curl -fL --retry 3 -o "$OUT/pinia.iife.prod.js" \
+            "https://unpkg.com/pinia@2.1.7/dist/pinia.iife.prod.js"
+          curl -fL --retry 3 -o "$OUT/index.css" \
+            "https://unpkg.com/element-plus@2.7.0/dist/index.css"
+          curl -fL --retry 3 -o "$OUT/index.full.min.js" \
+            "https://unpkg.com/element-plus@2.7.0/dist/index.full.min.js"
+          curl -fL --retry 3 -o "$OUT/echarts.min.js" \
+            "https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"
+          curl -fL --retry 3 -o "$OUT/axios.min.js" \
+            "https://unpkg.com/axios@1.7.0/dist/axios.min.js"
+          curl -fL --retry 3 -o "$OUT/marked.min.js" \
+            "https://unpkg.com/marked@13.0.0/lib/marked.umd.js"
+          curl -fL --retry 3 -o "$OUT/xlsx.full.min.js" \
+            "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"
+
+      - name: Create manifest and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > offline-web-deps/SOURCES.tsv <<'EOF'
+          file	package	version	source
+          vue.global.prod.js	vue	3.4.21	https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js
+          vue-router.global.prod.js	vue-router	4.3.0	https://unpkg.com/vue-router@4.3.0/dist/vue-router.global.prod.js
+          pinia.iife.prod.js	pinia	2.1.7	https://unpkg.com/pinia@2.1.7/dist/pinia.iife.prod.js
+          index.css	element-plus	2.7.0	https://unpkg.com/element-plus@2.7.0/dist/index.css
+          index.full.min.js	element-plus	2.7.0	https://unpkg.com/element-plus@2.7.0/dist/index.full.min.js
+          echarts.min.js	echarts	5.5.0	https://unpkg.com/echarts@5.5.0/dist/echarts.min.js
+          axios.min.js	axios	1.7.0	https://unpkg.com/axios@1.7.0/dist/axios.min.js
+          marked.min.js	marked	13.0.0	https://unpkg.com/marked@13.0.0/lib/marked.umd.js
+          xlsx.full.min.js	xlsx	0.18.5	https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js
+          EOF
+
+          cat > offline-web-deps/README.md <<'EOF'
+          # Offline Web Dependencies
+
+          Pinned browser builds for transfer into an offline/intranet environment.
+
+          - Vue 3.4.21
+          - Vue Router 4.3.0
+          - Pinia 2.1.7
+          - Element Plus 2.7.0
+          - ECharts 5.5.0
+          - Axios 1.7.0
+          - Marked 13.0.0
+          - SheetJS xlsx 0.18.5
+
+          Files are under `vendor/`.
+          See `SOURCES.tsv` for exact upstream URLs and `SHA256SUMS.txt` for integrity checks.
+          EOF
+
+          (cd offline-web-deps && sha256sum vendor/* > SHA256SUMS.txt)
+
+      - name: Build ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f offline-web-deps-2026-09-23.zip
+          zip -r -9 offline-web-deps-2026-09-23.zip offline-web-deps
+
+      - name: Commit generated package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add offline-web-deps offline-web-deps-2026-09-23.zip
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "build: add offline web dependencies bundle"
+            git push
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-web-deps-2026-09-23
+          path: offline-web-deps-2026-09-23.zip
+          if-no-files-found: error
